@@ -31,7 +31,6 @@ from perfkitbenchmarker import network
 from perfkitbenchmarker import providers
 from perfkitbenchmarker import resource
 from perfkitbenchmarker.providers.gcp import util
-import six
 
 FLAGS = flags.FLAGS
 NETWORK_RANGE = '10.0.0.0/8'
@@ -87,7 +86,11 @@ class GceFirewall(network.BaseFirewall):
   CLOUD = providers.GCP
 
   def __init__(self):
-    """Initialize GCE firewall class."""
+    """Initialize GCE firewall class.
+
+    Args:
+      project: The GCP project name under which firewall is created.
+    """
     self._lock = threading.Lock()
     self.firewall_rules = {}
 
@@ -106,9 +109,9 @@ class GceFirewall(network.BaseFirewall):
     with self._lock:
       if end_port is None:
         end_port = start_port
-      firewall_name = ('perfkit-firewall-%s-%d-%d' %
-                       (FLAGS.run_uri, start_port, end_port))
-      key = (vm.project, start_port, end_port)
+      firewall_name = ('perfkit-firewall-%s-%s-%d-%d' %
+                       (vm.zone, FLAGS.run_uri, start_port, end_port))
+      key = (vm.project, vm.zone, start_port, end_port)
       if key in self.firewall_rules:
         return
       allow = ','.join('{0}:{1}-{2}'.format(protocol, start_port, end_port)
@@ -121,7 +124,7 @@ class GceFirewall(network.BaseFirewall):
 
   def DisallowAllPorts(self):
     """Closes all ports on the firewall."""
-    for firewall_rule in six.itervalues(self.firewall_rules):
+    for firewall_rule in self.firewall_rules.itervalues():
       firewall_rule.Delete()
 
 
@@ -132,7 +135,7 @@ class GceNetworkSpec(network.BaseNetworkSpec):
 
     Args:
       project: The project for which the Network should be created.
-      **kwargs: Additional key word arguments passed to BaseNetworkSpec.
+      kwargs: Additional key word arguments passed to BaseNetworkSpec.
     """
     super(GceNetworkSpec, self).__init__(**kwargs)
     self.project = project
@@ -186,12 +189,14 @@ class GceSubnetResource(resource.BaseResource):
   def _Exists(self):
     cmd = util.GcloudCommand(self, 'compute', 'networks', 'subnets', 'describe',
                              self.name)
+    cmd.flags['region'] = self.region
     _, _, retcode = cmd.Issue(suppress_warning=True)
     return not retcode
 
   def _Delete(self):
     cmd = util.GcloudCommand(self, 'compute', 'networks', 'subnets', 'delete',
                              self.name)
+    cmd.flags['region'] = self.region
     cmd.Issue()
 
 
@@ -204,6 +209,11 @@ class GceNetwork(network.BaseNetwork):
     super(GceNetwork, self).__init__(network_spec)
     self.project = network_spec.project
     name = FLAGS.gce_network_name or 'pkb-network-%s' % FLAGS.run_uri
+    # add support for zone, cidr, and separate networks
+    if network_spec.zone and network_spec.cidr:
+      name = FLAGS.gce_network_name or 'pkb-network-%s-%s' % (network_spec.zone, FLAGS.run_uri)
+      FLAGS.gce_subnet_region = util.GetRegionFromZone(network_spec.zone)
+      FLAGS.gce_subnet_addr = network_spec.cidr
     mode = 'auto' if FLAGS.gce_subnet_region is None else 'custom'
     self.network_resource = GceNetworkResource(name, mode, self.project)
     if FLAGS.gce_subnet_region is None:
@@ -214,22 +224,28 @@ class GceNetwork(network.BaseNetwork):
                                                FLAGS.gce_subnet_addr,
                                                self.project)
     firewall_name = 'default-internal-%s' % FLAGS.run_uri
+    # add support for zone, cidr, and separate networks
+    if network_spec.zone and network_spec.cidr:
+      firewall_name = 'default-internal-%s-%s' % (network_spec.zone, FLAGS.run_uri)
+      self.NETWORK_RANGE = network_spec.cidr
     self.default_firewall_rule = GceFirewallRule(
         firewall_name, self.project, ALLOW_ALL, name, NETWORK_RANGE)
 
   @staticmethod
   def _GetNetworkSpecFromVm(vm):
     """Returns a BaseNetworkSpec created from VM attributes."""
-    return GceNetworkSpec(project=vm.project, zone=vm.zone)
+    return GceNetworkSpec(project=vm.project, zone=vm.zone, cidr=vm.cidr)
 
   @classmethod
   def _GetKeyFromNetworkSpec(cls, spec):
     """Returns a key used to register Network instances."""
+    if spec.zone and spec.cidr:
+      return (cls.CLOUD, spec.project, spec.zone)
     return (cls.CLOUD, spec.project)
 
   def Create(self):
     """Creates the actual network."""
-    if not FLAGS.gce_network_name:
+    if FLAGS.gce_network_name is None:
       self.network_resource.Create()
       if self.subnet_resource:
         self.subnet_resource.Create()
@@ -237,7 +253,7 @@ class GceNetwork(network.BaseNetwork):
 
   def Delete(self):
     """Deletes the actual network."""
-    if not FLAGS.gce_network_name:
+    if FLAGS.gce_network_name is None:
       self.default_firewall_rule.Delete()
       if self.subnet_resource:
         self.subnet_resource.Delete()

@@ -24,12 +24,7 @@ All VM specifics are self-contained and the class provides methods to
 operate on the VM: boot, shutdown, etc.
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import collections
-import copy
 import itertools
 import json
 import logging
@@ -64,6 +59,7 @@ NVME = 'NVME'
 SCSI = 'SCSI'
 UBUNTU_IMAGE = 'ubuntu-14-04'
 RHEL_IMAGE = 'rhel-7'
+WINDOWS_IMAGE = 'windows-2012-r2'
 _INSUFFICIENT_HOST_CAPACITY = ('does not have enough resources available '
                                'to fulfill the request.')
 STOCKOUT_MESSAGE = ('Creation failed due to insufficient capacity indicating a '
@@ -380,6 +376,7 @@ class GceVirtualMachine(virtual_machine.BaseVirtualMachine):
     self.node_type = vm_spec.node_type
     self.node_group = None
     self.use_dedicated_host = vm_spec.use_dedicated_host
+    self.host_type = vm_spec.host_type
     self.num_vms_per_host = vm_spec.num_vms_per_host
     self.min_cpu_platform = vm_spec.min_cpu_platform
     self.gce_remote_access_firewall_rule = FLAGS.gce_remote_access_firewall_rule

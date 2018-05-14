@@ -318,6 +318,7 @@ flags.DEFINE_boolean(
 flags.DEFINE_string(
     'skip_pending_runs_file', None,
     'If file exists, any pending runs will be not be executed.')
+<<<<<<< HEAD
 flags.DEFINE_integer(
     'after_prepare_sleep_time', 0,
     'The time in seconds to sleep after the prepare phase. This can be useful '
@@ -345,6 +346,9 @@ flags.DEFINE_bool('disable_interrupt_moderation', False,
                   'Turn off the interrupt moderation networking feature')
 flags.DEFINE_bool('disable_rss', False,
                   'Whether or not to disable the Receive Side Scaling feature.')
+flags.DEFINE_boolean(
+    'use_vpn', False,
+    'Creates VPN tunnels between vm_groups')
 
 
 # Support for using a proxy in the cloud environment.
